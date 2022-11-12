@@ -1,6 +1,6 @@
 ;;; gle-mode.el --- Major mode to edit Graphics Layout Engine files  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2017  Free Software Foundation, Inc
+;; Copyright (C) 2017-2022  Free Software Foundation, Inc
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Package-Requires: ((cl-lib "0.5"))
@@ -23,11 +23,11 @@
 
 ;; This is a major mode for files using the GLE (Graphics Layout Engine)
 ;; language.  See http://glx.sourceforge.net/
-;; [ Not sure why the site uses "glx", while everything else seems to use
-;;   "gle" instead.  ]
+;; [ Apparently the site uses "glx" while everything else seems to use
+;;   "gle" instead, because "gle" was already occupied in sourceforge.  ]
 
 ;; It provides:
-;; - Rudimentary code highlighting
+;; - Code highlighting
 ;; - Automatic indentation
 ;; - Flymake support (requires Emacs-26's fymake)
 ;; - Imenu support
@@ -35,8 +35,27 @@
 ;; - Completion of bloc names
 ;; - Skeletons/templates to insert or close blocs
 
+;; If you have misspelled a keyword or a command (etc.),
+;; it should jump into your eyes because it is not highlighted.
+
+;;;; Known defects:
+
+;; - `print' is not highlighted in:
+;;
+;;     if a==0 then print 0
+;;     else if a==1 then print 1
+;;     else print 2
+;;
+;; - The `gle--line-syntax' description of the GLE language was extracted
+;;   by hand from the doc and it is probably incomplete, and it is hard
+;;   to update.
+
+;;;; Contributors:
+;; Andrey Grozin <A.G.Grozin@inp.nsk.su> (2022-11-07)
+;; provided the data to build the syntax description from which
+;; the highlighting works.
+
 ;;;; TODO
-;; - Fix highlighting of function calls?
 ;; - provide more completion
 
 ;;; Code:
@@ -52,6 +71,13 @@
 
 (defvar gle-mode-syntax-table
   (let ((st (make-syntax-table)))
+    ;; Turn all symbol-constituent syntax into punctuation.
+    (map-char-table (lambda (c v)
+                      (and (equal v '(3))
+                           (set-char-table-range st c '(1))))
+                    st)
+    ;; Make `_' into a symbol-constituent again.
+    (modify-syntax-entry ?_ "_" st)
     (modify-syntax-entry ?! "<" st)
     (modify-syntax-entry ?\n ">" st)
     (modify-syntax-entry ?\" "\"" st)
@@ -119,18 +145,15 @@
   "Expects point to be right after `if`."
   (save-excursion
     (let ((eol (line-end-position))
-          (lasttok nil)
-          (tok nil))
-      (while (<= (point) eol)
-        (setq lasttok tok)
-        (forward-comment (point-max))
-        (setq tok (buffer-substring (point)
-                                    (progn
-                                      (or (> (skip-syntax-forward "w_") 0)
-                                          (> (skip-syntax-forward ".") 0)
-                                          (forward-char 1))
-                                      (point)))))
-      (if (equal lasttok "then")
+          (then nil))
+      (while (progn
+               (forward-comment (point-max))
+               (and (< (point) eol)
+                    (not (setq then (looking-at "then\\_>")))))
+        (or (> (skip-syntax-forward "w_") 0)
+            (> (skip-syntax-forward ".") 0)
+            (forward-char 1)))
+      (if then
           "if bloc"
         "if line"))))
 
@@ -225,25 +248,149 @@
 
 ;;;; Font-lock
 
+(defvar gle--line-syntax
+  (let ((blocnames
+         ;; Extracted with:
+         ;;     sed -ne 's/\(^\|.*\\sf \)begin \([[:alnum:]]*\).*/\2/p' \
+         ;;         **/*.tex | sort -u
+         '(font-lock-builtin-face
+           ("box" any ("fill") ("add") ("nobox") ("name") ("round"))
+           ("path" any ("fill") ("stroke") ("clip"))
+           ("clip") ("config") ("contour") ("fitz") ("graph") ("key")
+           ("length") ("letz") ("name") ("object") ("origin")
+           ("rotate") ("scale") ("surface") ("table") ("tex") ("texpreamble")
+           ("text" ("width")) ("translate")))
+        (bitmaps '(font-lock-constant-face ("png") ("jpeg") ("gif") ("tiff")))
+        (arcends '(font-lock-constant-face ("start") ("end") ("both"))))
+    `(font-lock-keyword-face
+      ("begin" ,@blocnames)
+      ("end" ("if") ("sub")
+             ,@(mapcar (lambda (x) (if (consp x) (list (car x)) x)) blocnames))
+      ("if" any ("then"))               ;FIXME: What can come after `then'?
+      ("else" ("if" any ("then")))      ;FIXME: What can come after `else'?
+      ("for" any ("to") ("step"))
+      ("next")
+      ("sub") ;; font-lock-function-name-face ("[[:alpha:]][[:alnum:]_]*")
+      ("next")
+      ("local")
+      ("return")
+      font-lock-preprocessor-face
+      ("include") ;; Arg is a string, so we don't highlight it specially
+      font-lock-builtin-face
+      ("define" ("marker"))
+      ("bitmap"      any ("type" ,@bitmaps))
+      ("bitmap_info" any ("type" ,@bitmaps))
+      ("orientation" font-lock-constant-face ("portrait") ("landscape"))
+      ("papersize" font-lock-constant-face
+                   ("a0paper") ("a1paper") ("a2paper") ("a3paper") ("a4paper")
+                   ("letterpaper"))
+      ("tex"  any ("name") ("add"))
+      ("draw" any ("name"))
+      ("box"  any ("name") ("fill") ("justify") ("nobox") ("round"))
+      ("circle"  any ("fill"))
+      ("ellipse" any ("fill"))
+      ("aline"          any ("arrow") ("curve") ,@arcends)
+      ("rline"          any ("arrow") ("curve") ,@arcends)
+      ("arc"            any ("arrow") ,@arcends)
+      ("elliptical_arc" any ("arrow") ,@arcends)
+      ("join" any ("curve"))
+      ("colormap" any ("color") ("palette"))
+      ("abound") ("amove") ("rmove") ("arcto")   ("bezier") ("rbezier") ("curve")
+      ("closepath") ("gsave") ("grestore") ("defmarker") ("margins") ("marker")
+      ("postscript") ("print") ("psbbtweak") ("pscomment") ("reverse") ("save")
+      ("size") ("text") ("write")
+      ("set" ("alabeldist") ("alabelscale") ("arrowangle") ("arrowsize")
+       ("arrowstyle" font-lock-constant-face
+                     ("simple") ("filled") ("empty"))
+       ("atitledist") ("atitlescale") ("background ")
+       ("cap" font-lock-constant-face ("butt") ("round") ("square"))
+       ("color") ("dashlen") ("fill") ("font") ("fontlwidth") ("hei")
+       ("join" font-lock-constant-face ("mitre") ("round") ("bevel"))
+       ("just" font-lock-constant-face
+               ("center") ("left") ("right") ("tl") ("tc") ("tr") ("lc") ("cc")
+               ("rc") ("bl") ("bc") ("br"))
+       ("lstyle") ("lwidth") ("pattern")
+       ("texscale" font-lock-constant-face
+                   ("scale") ("fixed") ("none"))
+       ("titlescale")
+       ("ticksscale"))
+      )))
+
+(defun gle--fontify-next (desc face &optional top)
+  (let ((entries '())
+        (rules '())
+        (any (eq (car desc) 'any)))
+    (if any (pop desc))
+    (dolist (x desc)
+      (cond
+       ((consp x)
+        (push (cons (car x) (gle--fontify-next (cdr x) face))
+              entries))
+       ((null entries) (setq face x))
+       (t
+        (push (cons face entries) rules)
+        (setq entries nil)
+        (setq face x))))
+    (when entries
+      (push (cons face entries) rules))
+    (when rules
+      (cl-assert (not (and any top)))
+      (let ((arules
+             ;; List of (MORE FACE . ENTRIES) where MORE is non-nil if
+             ;; one of the ENTRIES needs further processing.
+             (mapcar (lambda (x)
+                       (cons (not (not (cl-some #'cdr (cdr x)))) x))
+                     rules))
+            (regexp
+             (concat (cond (any ".*") (top "^[ \t]*") (t "[ \t]*"))
+                     "\\_<\\("
+                     (mapconcat (lambda (x)
+                                  (concat (regexp-opt (mapcar #'car (cdr x)))
+                                          "\\_>\\(\\)"))
+                                rules
+                                "\\|")
+                     "\\)")))
+        (lambda (limit)
+          (while
+              (when (if top (re-search-forward regexp limit t)
+                      (looking-at regexp))
+                (goto-char (match-end 0))
+                (let ((i 2))
+                  (while (not (match-beginning i)) (setq i (1+ i)))
+                  (let ((arule (nth (- i 2) arules)))
+                    (put-text-property (match-beginning 1) (match-end 1)
+                                       'face (cadr arule))
+                    (when (car arule)
+                      (let* ((kw (match-string-no-properties 1))
+                             (entry (assoc-string kw (cddr arule) t)))
+                        (cl-assert entry t)
+                        (when (cdr entry)
+                          (funcall (cdr entry) limit))))))
+                ;; Try again if applicable.
+                (or top any))))))))
+
 (defvar gle-font-lock-keywords
   `(("^[ \t]*\\(\\(?:\\sw\\|\\s_\\)+\\)[ \t]*="
-     (1 font-lock-variable-name-face))
+     (1 'font-lock-variable-name-face))
     ("^[ \t]*if[ \t][^!\n;]*[ \t]\\(then\\)\\_>"
-     (1 font-lock-keyword-face))
+     (1 'font-lock-keyword-face))
     ("^[ \t]*for[ \t][^!\n;]*[ \t]\\(to\\)\\_>\\(?:[^!\n;]*[ \t]\\(step\\)\\_>\\)?"
-     (1 font-lock-keyword-face) (2 font-lock-keyword-face nil t))
+     (1 'font-lock-keyword-face) (2 'font-lock-keyword-face nil t))
     ("^[ \t]*else[ \t]+\\(if\\)[ \t][^!\n;]*[ \t]\\(then\\)\\_>"
-     (1 font-lock-keyword-face) (2 font-lock-keyword-face))
+     (1 'font-lock-keyword-face) (2 'font-lock-keyword-face))
     (,(concat "^[ \t]*end[ \t]+\\("
               (regexp-opt `("if" "sub" ,@gle--bloc-names))
               "\\_>\\)")
-     (1 font-lock-keyword-face))
+     (1 'font-lock-keyword-face))
     (,(concat "^[ \t]*begin[ \t]+\\(" (regexp-opt gle--bloc-names) "\\_>\\)")
-     (1 font-lock-keyword-face))
+     (1 'font-lock-keyword-face))
     ("^[ \t]*sub[ \t]*\\(\\(?:\\sw\\|\\s_\\)+\\)"
-     (1 font-lock-function-name-face))
+     (1 'font-lock-function-name-face))
+    ("^[ \t]*\\(@[[:alpha:]][[:alnum:]_]*\\)" (1 'font-lock-function-name-face))
+    (,(gle--fontify-next gle--line-syntax nil 'top))
     ;; FIXME: Actually, this can also be a function call!
-    ("^[ \t]*\\(\\(?:\\sw\\|\\s_\\)+\\)" (1 font-lock-keyword-face))))
+    ;; ("^[ \t]*\\([[:alpha:]][[:alnum:]_]*\\)" (1 'font-lock-keyword-face))
+    ("\\_<\\([[:alpha:]][[:alnum:]_]*\\)(" (1 'font-lock-function-name-face))))
 
 ;;;; Flymake
 
@@ -323,6 +470,7 @@ See `flymake-diagnostic-functions' for documentation of REPORT-FN."
 ;;;; Completion
 
 (defun gle--capf-data ()
+  ;; FIXME: Use `gle--line-syntax'!
   (save-excursion
     (skip-chars-backward "a-z")
     (when (looking-back "^[ \t]*\\(?:begin\\|end\\)[ \t]+"
@@ -469,8 +617,8 @@ NAME is the kind of bloc to insert."
 
 (defvar gle-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map [?\C-c ?\C-e] 'gle-insert-close)
-    (define-key map [?\C-c ?\C-o] 'gle-insert-bloc)
+    (define-key map [?\C-c ?\C-e] #'gle-insert-close)
+    (define-key map [?\C-c ?\C-o] #'gle-insert-bloc)
     map))
 
 ;;;###autoload
@@ -485,7 +633,7 @@ NAME is the kind of bloc to insert."
               :forward-token #'gle-smie-forward-token
               :backward-token #'gle-smie-backward-token)
   (setq-local font-lock-defaults
-              '(gle-font-lock-keywords))
+              '(gle-font-lock-keywords nil t))
   (setq-local imenu-generic-expression gle-imenu-generic-expression)
   (add-hook 'flymake-diagnostic-functions #'gle--flymake nil 'local)
   (add-hook 'completion-at-point-functions #'gle--capf-data nil 'local)

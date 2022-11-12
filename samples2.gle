@@ -1,0 +1,130 @@
+sub a1_b2 x
+    local a
+    return 0
+end sub
+
+@a1_b2 x
+a = a1_b2(0)+F(1)+G(2)
+
+Begin Box Fill red Add 0.5 Round 0.1 Name abc Nobox
+    Amove 0 0
+    Aline 1 1 Arrow End Curve a b c d
+End Box
+
+BEGIN PATH FILL shade STROKE CLIP
+    RMOVE 0 0
+    RLINE 1 1 ARROW BOTH CURVE a b c d
+END PATH
+
+begin translate x y
+    circle r fill black
+    arc r a b arrow start
+    narc r a b arrow start
+end translate
+
+begin rotate a
+    arcto x1 y1 x2 y2 a
+    ellipse x y fill blue
+end rotate
+
+begin scale b
+    elliptical_arc x y a b arrow end
+    elliptical_narc x y a b arrow end
+    reverse
+end scale
+
+begin origin
+    bezier x1 y1 x2 y2 x3 y3
+    rbezier x1 y1 x2 y2 x3 y3
+    curve x1 y1 x2 y2 x3 y3
+    closepath
+end origin
+
+begin clip
+    abound 1 1
+    gsave
+    grestore
+end clip
+
+begin length l
+    box x y justify tl fill green name abc nobox round 0.1
+    marker cross 0.5
+end length
+
+begin name abc
+    bitmap file x y type jpeg
+    bitmap_info file x y type jpeg
+    postscript file x y
+end name
+
+begin object xyz
+    colormap f x0 x1 y0 y1 x y x2 y2 color palette pal
+    draw point arg1 arg2 name abc
+    join o1.cc d o2.cc curve a1 a2 d1 d2
+end object
+
+begin table
+end table
+
+begin text
+    abc def jhi
+    uvw xyz
+end text
+
+if a==0 then
+    print 0
+else
+    if a==1 then
+        print 1
+    else
+        print 2
+    end if
+end if
+
+if a==0 then print 0
+else if a==1 then print 1
+else print 2
+
+for i = 0 to 10 step 2
+    print i
+next i
+
+print abc$ "abc""def" 'uvw''xyz' xyz$ ! a comment
+
+size x y
+papersize a4paper
+orientation portrait
+margins x y
+include feyn.tex
+define marker abc font fs s x y
+defmarker abc xyz
+psbbtweak
+pscomment "abc"
+save abc
+tex "$\alpha$" name abc add d
+text abc def xyz
+write abc$ "abc" 'xyz' xyz$
+
+set alabeldist a
+set alabelscale s
+set atitledist a
+set atitlescale s
+set arrowangle a
+set arrowsize s
+set arrowstyle simple
+set color green
+set background yellow
+set fill clear
+set pattern shade
+set font abc
+set fontlwidth d
+set hei h
+set titlescale s
+set ticksscale s
+set dashlen d
+set lstyle 11
+set lwidth d
+set cap round
+set join mitre
+set just center
+set texscale fixed
