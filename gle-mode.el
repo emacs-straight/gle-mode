@@ -22,7 +22,7 @@
 ;;; Commentary:
 
 ;; This is a major mode for files using the GLE (Graphics Layout Engine)
-;; language.  See http://glx.sourceforge.net/
+;; language.  See https://glx.sourceforge.net/
 ;; [ Apparently the site uses "glx" while everything else seems to use
 ;;   "gle" instead, because "gle" was already occupied in sourceforge.  ]
 
